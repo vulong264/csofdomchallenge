@@ -1,0 +1,16 @@
+import { defineConfig } from "vitest/config";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = dirname(fileURLToPath(import.meta.url));
+
+// Pure-logic tests only (maths, rewards, gating, SRS) — no DOM needed.
+export default defineConfig({
+  resolve: {
+    alias: { "@": root },
+  },
+  test: {
+    environment: "node",
+    include: ["{lib,content}/**/*.test.ts"],
+  },
+});
