@@ -1,0 +1,39 @@
+# Auto build + deploy to Cloud Run on every push to `main`.
+# Wired to a Cloud Build trigger (GitHub App connection). Runs as the project's
+# Compute Engine default service account, which holds run.admin +
+# serviceAccountUser (deploy) and datastore.user + secretAccessor (runtime).
+#
+# Image is tagged with the commit SHA (immutable, for rollbacks) and `latest`.
+# The deploy step only sets --image, so Cloud Run preserves all existing
+# config: the FAMILY_ACCESS_CODE / ANTHROPIC_API_KEY secrets, scaling, etc.
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}:$SHORT_SHA", "-t", "${_IMAGE}:latest", "."]
+
+  - id: push-sha
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}:$SHORT_SHA"]
+
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}:latest"]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - cs-of-doom
+      - --image=${_IMAGE}:$SHORT_SHA
+      - --region=us-central1
+      - --quiet
+
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/gen-lang-client-0033670140/cs-of-doom/cs-of-doom
+
+options:
+  # Required when building as a user-specified / compute SA (no default logs bucket).
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
