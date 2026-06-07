@@ -1,12 +1,12 @@
 # CS of Doom — Dungeon Run
 
-A single-learner web app that teaches **Cambridge IGCSE Computer Science (0478)** to genuine exam mastery, themed as a five-sector dungeon where each unit ends in a **Boss Fight** (the Mastery Test, gated at ≥80%). Built with Next.js 16, React 19, Tailwind v4, and the Anthropic Messages API for a Socratic AI tutor.
+A single-learner web app that teaches **Cambridge IGCSE Computer Science (0478)** to genuine exam mastery, themed as a five-sector dungeon where each unit ends in a **Boss Fight** (the Mastery Test, gated at ≥80%). Built with Next.js 16, React 19, Tailwind v4, and the Google Gemini API for a Socratic AI tutor.
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env.local   # paste ANTHROPIC_API_KEY (optional until the AI tutor step)
+cp .env.example .env.local   # paste GEMINI_API_KEY (optional until the AI tutor step)
 npm run dev                  # http://localhost:3000
 ```
 
@@ -27,8 +27,8 @@ Everything except the AI tutor / free-text grading runs fully offline. Without a
 
 Server-only secrets live in `.env.local` (gitignored). See `.env.example`:
 
-- `ANTHROPIC_API_KEY` — used only in `app/api/*` route handlers; never shipped to the client.
-- `ANTHROPIC_TUTOR_MODEL` / `ANTHROPIC_GRADER_MODEL` — optional model overrides.
+- `GEMINI_API_KEY` — used only in `app/api/*` route handlers; never shipped to the client.
+- `GEMINI_TUTOR_MODEL` / `GEMINI_GRADER_MODEL` — optional model overrides.
 
 ## Progress & data
 
@@ -37,7 +37,7 @@ Progress is stored in `localStorage` behind a `ProgressStore` interface. Use the
 ## Deploy (Vercel)
 
 1. Push to a Git repo and import it at [vercel.com/new](https://vercel.com/new).
-2. Set `ANTHROPIC_API_KEY` (and optional model overrides) under Project → Settings → Environment Variables.
+2. Set `GEMINI_API_KEY` (and optional model overrides) under Project → Settings → Environment Variables.
 3. Deploy — `next build` and output are auto-detected.
 
 ## Project layout

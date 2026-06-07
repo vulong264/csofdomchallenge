@@ -1,6 +1,6 @@
 /**
  * Browser-side fetch helpers for the AI routes (build step 4). These talk to
- * `/api/tutor` and `/api/grade` — the Anthropic key lives only behind those
+ * `/api/tutor` and `/api/grade` — the Gemini key lives only behind those
  * routes, never here. Safe to import from client components.
  */
 import { getAccessCode } from "@/lib/sync/client";

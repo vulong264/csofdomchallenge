@@ -9,7 +9,7 @@ A single-learner web app that teaches **Cambridge IGCSE Computer Science (0478, 
 - **Tailwind CSS v4** — CSS-first config. Tokens live in `app/globals.css` via `:root` vars + `@theme inline`, so cosmetic "loot" themes can override them with `[data-theme="…"]`. There is **no** `tailwind.config.js`.
 - **Framer Motion** for transitions; plain **SVG/Canvas** for interactive widgets (no charting lib).
 - **Vitest** for unit tests (maths/logic/rewards/gating). `npm test`.
-- **Anthropic Messages API** for the AI tutor + free-text grading — **server routes only** (`app/api/*`), key in `ANTHROPIC_API_KEY`, never in the client bundle. Sonnet-class tutor, Haiku-class inline grading. (Build step 4.)
+- **Google Gemini API** (`@google/genai`) for the AI tutor + free-text grading — **server routes only** (`app/api/*`), key in `GEMINI_API_KEY`, never in the client bundle. `gemini-2.5-flash` tutor (streamed), `gemini-2.5-flash-lite` JSON-structured grader; thinking disabled for latency. (Build step 4.)
 
 ## Architecture
 - `content/` — the curriculum is the **source of truth** (teach to this, not to model recall). `content/index.ts` exports `UNITS`; units are drop-in extensible (syllabus Topics 4/5/6/8/9 added later without refactor). Typed objects only — no UI here.

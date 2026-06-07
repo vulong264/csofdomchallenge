@@ -92,7 +92,7 @@ export function TutorChat({ unit, available }: { unit: Unit; available: boolean 
         </div>
         <p className="mt-2 font-semibold">The AI tutor is offline</p>
         <p className="mt-1 text-sm text-muted">
-          No <code className="rounded bg-surface-2 px-1">ANTHROPIC_API_KEY</code> is configured, so the live tutor is
+          No <code className="rounded bg-surface-2 px-1">GEMINI_API_KEY</code> is configured, so the live tutor is
           unavailable. Here&apos;s what this sector covers in the meantime:
         </p>
         <p className="mt-3 rounded-lg border border-border bg-surface-2 p-3 text-sm text-text/80">

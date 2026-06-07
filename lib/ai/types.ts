@@ -2,7 +2,7 @@
  * Shared request/response contracts for the AI tutor + free-text grading
  * (build step 4). These are PURE types — no SDK or server imports — so both the
  * server routes (`app/api/*`) and the client components can depend on them
- * without dragging the Anthropic key anywhere near the browser bundle.
+ * without dragging the Gemini key anywhere near the browser bundle.
  */
 import type { CommandWord } from "@/lib/domain/command-words";
 
@@ -67,7 +67,7 @@ export interface AiErrorBody {
   error: string;
   /**
    * `unavailable` → no key / not authorised on this device; `upstream` →
-   * Anthropic error; `bad_request`; `rate_limited` → shared daily cap reached.
+   * upstream model error; `bad_request`; `rate_limited` → shared daily cap reached.
    */
   reason: "unavailable" | "upstream" | "bad_request" | "rate_limited";
 }

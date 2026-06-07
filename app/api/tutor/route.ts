@@ -5,7 +5,7 @@
  * GET:  reports whether AI is configured, so the client can render the static
  *       fallback (concept summary + misconceptions) when no key is present.
  *
- * Server-only: the Anthropic key lives here and is never sent to the client.
+ * Server-only: the Gemini key lives here and is never sent to the client.
  */
 import { getUnit } from "@/content/index";
 import { aiCodeOk, guardAiSpend } from "@/lib/ai/guard";
