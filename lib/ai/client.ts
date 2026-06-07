@@ -3,6 +3,8 @@
  * `/api/tutor` and `/api/grade` — the Anthropic key lives only behind those
  * routes, never here. Safe to import from client components.
  */
+import { getAccessCode } from "@/lib/sync/client";
+import { ACCESS_CODE_HEADER } from "@/lib/sync/types";
 import type { AiErrorBody, GradeRequest, GradeResponse, TutorRequest } from "./types";
 
 /** Thrown by the helpers below; `reason: "unavailable"` ⇒ no API key configured. */
@@ -15,10 +17,19 @@ export class AiError extends Error {
   }
 }
 
-/** Is the AI tutor/grader configured? Drives the static-fallback UI. */
+/**
+ * Attach the family access code (when this device holds one) so the guarded AI
+ * routes admit the request. Without it, the routes treat AI as unavailable.
+ */
+function withCode(base: Record<string, string> = {}): Record<string, string> {
+  const code = getAccessCode();
+  return code ? { ...base, [ACCESS_CODE_HEADER]: code } : base;
+}
+
+/** Is the AI tutor/grader configured AND authorised on this device? */
 export async function fetchAiStatus(signal?: AbortSignal): Promise<boolean> {
   try {
-    const res = await fetch("/api/tutor", { method: "GET", signal });
+    const res = await fetch("/api/tutor", { method: "GET", headers: withCode(), signal });
     if (!res.ok) return false;
     const body = (await res.json()) as { available?: boolean };
     return !!body.available;
@@ -49,7 +60,7 @@ export async function streamTutor(
   try {
     res = await fetch("/api/tutor", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCode({ "Content-Type": "application/json" }),
       body: JSON.stringify(req),
       signal,
     });
@@ -80,7 +91,7 @@ export async function gradeAnswer(req: GradeRequest, signal?: AbortSignal): Prom
   try {
     res = await fetch("/api/grade", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withCode({ "Content-Type": "application/json" }),
       body: JSON.stringify(req),
       signal,
     });

@@ -4,6 +4,7 @@
  * `explain` (formative, for "explain it back"). Server-only — the key stays here.
  */
 import { getUnit } from "@/content/index";
+import { guardAiSpend } from "@/lib/ai/guard";
 import { aiAvailable, gradeFreeText } from "@/lib/ai/server";
 import type { AiErrorBody, GradeRequest } from "@/lib/ai/types";
 
@@ -31,6 +32,10 @@ export async function POST(request: Request): Promise<Response> {
   if (typeof body.prompt !== "string" || typeof body.studentAnswer !== "string") {
     return err("bad_request", 400, "prompt and studentAnswer are required.");
   }
+
+  // Family-code + daily-cap guard (claims one unit of the shared quota).
+  const blocked = await guardAiSpend(request);
+  if (blocked) return blocked;
 
   try {
     const grade = await gradeFreeText({

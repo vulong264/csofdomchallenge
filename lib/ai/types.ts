@@ -65,6 +65,9 @@ export interface AiStatus {
 /** Uniform error body for AI routes so the client can branch on `reason`. */
 export interface AiErrorBody {
   error: string;
-  /** `unavailable` → no key; `upstream` → Anthropic error; `bad_request`. */
-  reason: "unavailable" | "upstream" | "bad_request";
+  /**
+   * `unavailable` → no key / not authorised on this device; `upstream` →
+   * Anthropic error; `bad_request`; `rate_limited` → shared daily cap reached.
+   */
+  reason: "unavailable" | "upstream" | "bad_request" | "rate_limited";
 }

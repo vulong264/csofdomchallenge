@@ -19,6 +19,7 @@ import type { LearnerProgress } from "@/lib/progress/types";
 
 const COLLECTION = "learners";
 const DOC_ID = process.env.LEARNER_DOC_ID || "tom";
+const USAGE_COLLECTION = "usage";
 
 interface StoredDoc {
   json: string;
@@ -85,5 +86,22 @@ export async function saveRemote(progress: LearnerProgress): Promise<SaveResult>
     const stored: StoredDoc = { json: JSON.stringify(progress), updatedISO: progress.updatedISO };
     tx.set(ref, stored);
     return { written: true as const, updatedISO: progress.updatedISO };
+  });
+}
+
+/**
+ * Atomically claim one unit of a shared per-day quota (collection `usage`, one
+ * doc per `dayKey`). Returns `ok:false` without incrementing once `count` has
+ * reached `cap`, so the cap is global across all Cloud Run instances — not a
+ * leaky per-process counter. Caller supplies `dayKey` (e.g. a UTC date).
+ */
+export async function consumeDailyQuota(cap: number, dayKey: string): Promise<{ ok: boolean; count: number }> {
+  const ref = db().collection(USAGE_COLLECTION).doc(dayKey);
+  return db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const count = snap.exists ? ((snap.data() as { count?: number }).count ?? 0) : 0;
+    if (count >= cap) return { ok: false, count };
+    tx.set(ref, { count: count + 1, day: dayKey }, { merge: true });
+    return { ok: true, count: count + 1 };
   });
 }

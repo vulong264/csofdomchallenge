@@ -8,14 +8,17 @@
  * Server-only: the Anthropic key lives here and is never sent to the client.
  */
 import { getUnit } from "@/content/index";
+import { aiCodeOk, guardAiSpend } from "@/lib/ai/guard";
 import { aiAvailable, streamTutorReply } from "@/lib/ai/server";
 import type { AiErrorBody, AiStatus, TutorMessage, TutorRequest } from "@/lib/ai/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export function GET(): Response {
-  return Response.json({ available: aiAvailable() } satisfies AiStatus);
+export function GET(request: Request): Response {
+  // A device without the family code (when one is configured) sees AI as
+  // unavailable → static fallback, exactly like a missing key.
+  return Response.json({ available: aiCodeOk(request) && aiAvailable() } satisfies AiStatus);
 }
 
 function err(reason: AiErrorBody["reason"], status: number, error: string): Response {
@@ -44,6 +47,10 @@ export async function POST(request: Request): Promise<Response> {
   if (cleaned.length === 0 || cleaned[0].role !== "user") {
     return err("bad_request", 400, "Conversation must start with a user message.");
   }
+
+  // Family-code + daily-cap guard (claims one unit of the shared quota).
+  const blocked = await guardAiSpend(request);
+  if (blocked) return blocked;
 
   try {
     const stream = streamTutorReply(
