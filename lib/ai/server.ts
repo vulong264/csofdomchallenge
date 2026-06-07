@@ -1,95 +1,121 @@
 /**
  * Server-only AI plumbing for the tutor + free-text grader (build step 4).
  *
- * INVARIANT (CLAUDE.md): the Anthropic key never reaches the client bundle.
- * The `import "server-only"` below makes any accidental client import a build
- * error, and this module is only ever imported from `app/api/*` route handlers.
- * AI degrades gracefully to static content when the key is absent.
+ * Backed by the Google Gemini API. INVARIANT (CLAUDE.md): the API key never
+ * reaches the client bundle — `import "server-only"` makes any accidental
+ * client import a build error, and this module is only imported from
+ * `app/api/*` route handlers. AI degrades gracefully to static content when the
+ * key is absent.
  *
- * Models (spec §stack): a Sonnet-class model for the conversational tutor, a
- * Haiku-class model for cheap inline grading — both overridable via env.
+ * Models: a Flash-class model for the conversational tutor, a cheaper
+ * Flash-Lite model for inline grading — both overridable via env. Gemini 2.5's
+ * "thinking" is disabled (thinkingBudget 0) to keep replies fast.
  */
 import "server-only";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import { graderSystemPrompt, graderUserPrompt, tutorSystemPrompt, type TutorScope } from "./prompts";
 import type { GradeRequest, GradeResponse, TutorMessage } from "./types";
 
-const TUTOR_MODEL = process.env.ANTHROPIC_TUTOR_MODEL || "claude-sonnet-4-6";
-const GRADER_MODEL = process.env.ANTHROPIC_GRADER_MODEL || "claude-haiku-4-5";
+const TUTOR_MODEL = process.env.GEMINI_TUTOR_MODEL || "gemini-2.5-flash";
+const GRADER_MODEL = process.env.GEMINI_GRADER_MODEL || "gemini-2.5-flash-lite";
 
 export function aiAvailable(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return !!process.env.GEMINI_API_KEY;
 }
 
-let cached: Anthropic | null = null;
-function client(): Anthropic {
-  if (!cached) cached = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+let cached: GoogleGenAI | null = null;
+function client(): GoogleGenAI {
+  if (!cached) cached = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   return cached;
+}
+
+/** Map our tutor turns to Gemini `contents` (Gemini uses "model", not "assistant"). */
+function toContents(messages: TutorMessage[]) {
+  return messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
 }
 
 /**
  * Stream the tutor's reply as plain UTF-8 text chunks. Latency-sensitive chat,
- * so thinking is off and effort is low — the system prompt does the heavy
- * lifting. Caller is responsible for the `aiAvailable()` pre-check.
+ * so thinking is disabled — the system prompt does the heavy lifting. Caller is
+ * responsible for the `aiAvailable()` pre-check.
+ *
+ * Resolves only once the FIRST chunk is in hand: an upstream failure (bad key,
+ * quota exhausted, rate limit) rejects this promise so the route can return a
+ * real error status, instead of handing back an empty 200 stream that the
+ * client renders as a silent dead bubble.
  */
-export function streamTutorReply(scope: TutorScope, messages: TutorMessage[]): ReadableStream<Uint8Array> {
+export async function streamTutorReply(
+  scope: TutorScope,
+  messages: TutorMessage[],
+): Promise<ReadableStream<Uint8Array>> {
   const encoder = new TextEncoder();
-  const sdkStream = client().messages.stream({
+  const sdkStream = await client().models.generateContentStream({
     model: TUTOR_MODEL,
-    max_tokens: 1024,
-    thinking: { type: "disabled" },
-    output_config: { effort: "low" },
-    system: tutorSystemPrompt(scope),
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    contents: toContents(messages),
+    config: {
+      systemInstruction: tutorSystemPrompt(scope),
+      maxOutputTokens: 1024,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   });
+
+  async function* deltas(): AsyncGenerator<string> {
+    for await (const chunk of sdkStream) {
+      const text = chunk.text;
+      if (text) yield text;
+    }
+  }
+  const iter = deltas();
+  // Surface a pre-stream failure as a thrown error (caught by the route → 502).
+  const first = await iter.next();
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const event of sdkStream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            controller.enqueue(encoder.encode(event.delta.text));
-          }
+        if (!first.done) controller.enqueue(encoder.encode(first.value));
+        for await (const text of iter) {
+          controller.enqueue(encoder.encode(text));
         }
         controller.close();
-      } catch {
-        // Mid-stream failure (rate limit, network): close cleanly so the client
-        // keeps whatever text arrived and shows a non-fatal hiccup notice.
+      } catch (err) {
+        // Mid-stream failure (rate limit, network) after some text already sent:
+        // log for observability, then close so the client keeps what arrived.
+        console.error("[tutor] stream error mid-response:", err);
         controller.close();
       }
-    },
-    cancel() {
-      sdkStream.abort();
     },
   });
 }
 
-/** JSON schema for the grade — structured outputs guarantee a parseable shape. */
-const GRADE_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
+/** Gemini response schema for the grade — guarantees a parseable JSON shape. */
+const GRADE_SCHEMA: Schema = {
+  type: Type.OBJECT,
   properties: {
-    marksAwarded: { type: "integer", description: "Marks earned by the answer." },
-    maxMarks: { type: "integer", description: "Maximum marks available." },
-    correct: { type: "boolean", description: "Whether the answer meets the bar." },
+    marksAwarded: { type: Type.INTEGER, description: "Marks earned by the answer." },
+    maxMarks: { type: Type.INTEGER, description: "Maximum marks available." },
+    correct: { type: Type.BOOLEAN, description: "Whether the answer meets the bar." },
     awardedPoints: {
-      type: "array",
-      items: { type: "string" },
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
       description: "Mark-scheme points the answer earned (brief paraphrase).",
     },
     missedPoints: {
-      type: "array",
-      items: { type: "string" },
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
       description: "Mark-scheme points the answer missed (brief paraphrase).",
     },
     misconception: {
-      type: "string",
+      type: Type.STRING,
       description: "A specific misconception the answer reveals, or empty string if none.",
     },
-    feedback: { type: "string", description: "Specific, encouraging feedback for the learner." },
+    feedback: { type: Type.STRING, description: "Specific, encouraging feedback for the learner." },
   },
   required: ["marksAwarded", "maxMarks", "correct", "awardedPoints", "missedPoints", "misconception", "feedback"],
-} as const;
+  propertyOrdering: ["marksAwarded", "maxMarks", "correct", "awardedPoints", "missedPoints", "misconception", "feedback"],
+};
 
 interface RawGrade {
   marksAwarded: number;
@@ -102,27 +128,26 @@ interface RawGrade {
 }
 
 /**
- * Grade a free-text answer against a Cambridge-style mark scheme. Haiku-class
- * model with structured output; no `effort`/`thinking` (unsupported on Haiku
- * and unnecessary here). Caller pre-checks `aiAvailable()`.
+ * Grade a free-text answer against a Cambridge-style mark scheme. Flash-Lite
+ * with JSON structured output; thinking disabled. Caller pre-checks
+ * `aiAvailable()`.
  */
 export async function gradeFreeText(req: GradeRequest): Promise<GradeResponse> {
   const declaredMax = req.maxMarks ?? req.markPoints?.length ?? 1;
 
-  const message = await client().messages.create({
+  const response = await client().models.generateContent({
     model: GRADER_MODEL,
-    max_tokens: 1024,
-    system: graderSystemPrompt(req),
-    messages: [{ role: "user", content: graderUserPrompt(req) }],
-    output_config: { format: { type: "json_schema", schema: GRADE_SCHEMA } },
+    contents: graderUserPrompt(req),
+    config: {
+      systemInstruction: graderSystemPrompt(req),
+      maxOutputTokens: 1024,
+      thinkingConfig: { thinkingBudget: 0 },
+      responseMimeType: "application/json",
+      responseSchema: GRADE_SCHEMA,
+    },
   });
 
-  const text = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-
-  const raw = JSON.parse(text) as RawGrade;
+  const raw = JSON.parse(response.text ?? "{}") as RawGrade;
 
   // Clamp to a sane range — the model can over-/under-shoot the declared max.
   const maxMarks = raw.maxMarks > 0 ? raw.maxMarks : declaredMax;

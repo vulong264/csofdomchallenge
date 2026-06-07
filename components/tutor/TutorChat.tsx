@@ -43,8 +43,15 @@ export function TutorChat({ unit, available }: { unit: Unit; available: boolean 
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const dropEmptyPlaceholder = () =>
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant" && last.content === "") return prev.slice(0, -1);
+        return prev;
+      });
+
     try {
-      await streamTutor(
+      const full = await streamTutor(
         { unitId: unit.id, messages: history },
         (chunk) => {
           setMessages((prev) => {
@@ -56,18 +63,21 @@ export function TutorChat({ unit, available }: { unit: Unit; available: boolean 
         },
         controller.signal,
       );
+      // Defensive: a 200 with no text (shouldn't happen now the server surfaces
+      // upstream errors, but guard so the bubble is never silently empty).
+      if (!full.trim()) {
+        setError("The tutor didn't respond — try again in a moment.");
+        dropEmptyPlaceholder();
+      }
     } catch (e) {
       const msg =
         e instanceof AiError && e.reason === "unavailable"
           ? "The tutor isn't configured right now."
-          : "The tutor hit a snag — try again.";
+          : e instanceof AiError && e.reason === "rate_limited"
+            ? e.message
+            : "The tutor is unavailable right now — try again in a moment.";
       setError(msg);
-      // Drop the empty assistant placeholder if nothing streamed.
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "assistant" && last.content === "") return prev.slice(0, -1);
-        return prev;
-      });
+      dropEmptyPlaceholder();
     } finally {
       setStreaming(false);
       abortRef.current = null;
@@ -82,7 +92,7 @@ export function TutorChat({ unit, available }: { unit: Unit; available: boolean 
         </div>
         <p className="mt-2 font-semibold">The AI tutor is offline</p>
         <p className="mt-1 text-sm text-muted">
-          No <code className="rounded bg-surface-2 px-1">ANTHROPIC_API_KEY</code> is configured, so the live tutor is
+          No <code className="rounded bg-surface-2 px-1">GEMINI_API_KEY</code> is configured, so the live tutor is
           unavailable. Here&apos;s what this sector covers in the meantime:
         </p>
         <p className="mt-3 rounded-lg border border-border bg-surface-2 p-3 text-sm text-text/80">
