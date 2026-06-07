@@ -104,6 +104,12 @@ export interface LearnerProgress {
   settings: Settings;
   /** Parent tuning of the reward economy, deep-merged over the defaults. */
   rewardConfigOverride?: DeepPartial<RewardConfig>;
+  /**
+   * Wall-clock of the last local mutation (ISO). Drives cross-device sync:
+   * when two devices hold copies, the larger `updatedISO` wins. Backfilled to
+   * `createdISO` for records written before multi-device sync existed.
+   */
+  updatedISO: string;
 }
 
 export const SCHEMA_VERSION = 1;

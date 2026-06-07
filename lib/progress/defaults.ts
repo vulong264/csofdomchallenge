@@ -18,11 +18,13 @@ export function defaultUnitProgress(unitId: string, status: UnitStatus = "locked
 
 export function createInitialProgress(opts?: { today?: string; nowISO?: string }): LearnerProgress {
   const today = opts?.today ?? todayISO();
+  const nowISO = opts?.nowISO ?? new Date().toISOString();
   return {
     schemaVersion: SCHEMA_VERSION,
     learnerName: DEFAULT_LEARNER_NAME,
     programStartLocalDate: today,
-    createdISO: opts?.nowISO ?? new Date().toISOString(),
+    createdISO: nowISO,
+    updatedISO: nowISO,
     xp: 0,
     level: 1,
     streak: { current: 0, longest: 0, comboPower: 0 },
@@ -52,6 +54,7 @@ export function normalizeProgress(input: unknown): LearnerProgress {
     learnerName: p.learnerName ?? base.learnerName,
     programStartLocalDate: p.programStartLocalDate ?? base.programStartLocalDate,
     createdISO: p.createdISO ?? base.createdISO,
+    updatedISO: p.updatedISO ?? p.createdISO ?? base.updatedISO,
     streak: { ...base.streak, ...(p.streak ?? {}) },
     cosmetics: { ...base.cosmetics, ...(p.cosmetics ?? {}) },
     settings: { ...base.settings, ...(p.settings ?? {}) },
