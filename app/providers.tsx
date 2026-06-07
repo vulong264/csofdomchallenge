@@ -3,6 +3,7 @@
 import { MotionConfig } from "framer-motion";
 import type { ReactNode } from "react";
 import { CosmeticToast } from "@/components/shell/CosmeticToast";
+import { SyncGate } from "@/components/shell/SyncGate";
 import { ThemeApplier } from "@/components/shell/ThemeApplier";
 import { TimeTracker } from "@/components/shell/TimeTracker";
 import { ProgressProvider, useProgress } from "@/lib/progress/context";
@@ -22,6 +23,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <TimeTracker />
       <MotionBridge>{children}</MotionBridge>
       <CosmeticToast />
+      <SyncGate />
     </ProgressProvider>
   );
 }

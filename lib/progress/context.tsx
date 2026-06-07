@@ -3,7 +3,14 @@
 /**
  * The progress hub. Wraps the ProgressStore with React state, injects `today`
  * and the resolved RewardConfig, and exposes the pure engine actions as simple
- * callbacks. Everything persists to localStorage on every change.
+ * callbacks. Persists to localStorage on every change, and — when the family
+ * access code is set — mirrors to Firestore for cross-device sync.
+ *
+ * Sync model (see lib/sync): localStorage is the instant local cache; the
+ * server is the source of truth. On load we pull and adopt whichever copy has
+ * the larger `updatedISO`; on change we push (debounced). A stale push is
+ * rejected (409) and the server's copy adopted instead, so banked progress is
+ * never clobbered by an out-of-date device.
  */
 import {
   createContext,
@@ -23,10 +30,28 @@ import { syncUnitStatuses } from "@/lib/engine/gating";
 import { resolveRewardConfig } from "@/lib/rewards/config";
 import type { RewardConfig } from "@/lib/rewards/types";
 import type { ReviewGrade } from "@/lib/srs/sm2";
+import { pullProgress, pushProgress, setAccessCode, verifyAccessCode } from "@/lib/sync/client";
 import { todayISO } from "@/lib/util/dates";
 import { createInitialProgress } from "./defaults";
 import { progressStore } from "./localStorageStore";
 import type { LearnerProgress } from "./types";
+
+/**
+ * - `connecting` — checking the server on load
+ * - `local`      — server has no sync configured; this device is standalone
+ * - `needs-code` — sync is on but we don't hold a valid family code yet
+ * - `synced`     — connected and up to date with the server
+ * - `offline`    — server unreachable right now; changes retry automatically
+ */
+export type SyncState = "connecting" | "local" | "needs-code" | "synced" | "offline";
+
+interface CommitOpts {
+  /** Surface newly-unlocked cosmetics as a toast (default true). */
+  announce?: boolean;
+  /** Bump `updatedISO` to now — true for local edits, false when adopting a
+   * loaded/remote copy so its timestamp is preserved (default true). */
+  stamp?: boolean;
+}
 
 interface ProgressContextValue {
   progress: LearnerProgress;
@@ -46,16 +71,30 @@ interface ProgressContextValue {
   exportJSON: () => string;
   importJSON: (json: string) => void;
   reset: () => void;
+  /** Cross-device sync status, for the header indicator + access-code gate. */
+  syncState: SyncState;
+  /** Submit the family access code; resolves true if accepted (or sync is off). */
+  submitAccessCode: (code: string) => Promise<boolean>;
+  /** Dismiss the access-code gate and keep using this device standalone. */
+  dismissSync: () => void;
+  /** Re-open the access-code gate (e.g. to link a device that was dismissed). */
+  requestSync: () => void;
 }
 
 const ProgressContext = createContext<ProgressContextValue | null>(null);
+
+const nowISO = (): string => new Date().toISOString();
 
 export function ProgressProvider({ children }: { children: ReactNode }) {
   const [progress, setProgress] = useState<LearnerProgress>(() => createInitialProgress());
   const [ready, setReady] = useState(false);
   const [today] = useState(() => todayISO());
   const [pendingUnlocks, setPendingUnlocks] = useState<string[]>([]);
+  const [syncState, setSyncState] = useState<SyncState>("connecting");
   const progressRef = useRef(progress);
+  // `updatedISO` we last reconciled with the server — guards the push effect so
+  // adopting a remote copy doesn't immediately bounce it back.
+  const lastSyncedISORef = useRef<string | null>(null);
 
   const setBoth = useCallback((p: LearnerProgress) => {
     progressRef.current = p;
@@ -63,10 +102,15 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const commit = useCallback(
-    (next: LearnerProgress, announce = true) => {
+    (next: LearnerProgress, opts: CommitOpts = {}) => {
+      const { announce = true, stamp = true } = opts;
       const synced = syncUnitStatuses(UNITS, next);
       // Auto-earn cosmetics on every state change (monotone — never removes).
-      const { progress: withCosmetics, newlyUnlocked } = syncUnlockedThemes(synced, rewardUnitIds());
+      const { progress: derived, newlyUnlocked } = syncUnlockedThemes(synced, rewardUnitIds());
+      // Stamp last so the timestamp survives the derivations above.
+      const withCosmetics: LearnerProgress = stamp
+        ? { ...derived, updatedISO: nowISO() }
+        : { ...derived, updatedISO: derived.updatedISO ?? next.updatedISO };
       progressStore.save(withCosmetics);
       setBoth(withCosmetics);
       if (announce && newlyUnlocked.length > 0) {
@@ -76,15 +120,86 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     [setBoth],
   );
 
-  // One-time hydration from localStorage after mount — the canonical way to
-  // avoid an SSR/CSR mismatch (the server can't read localStorage). A single
-  // post-mount sync is exactly what the set-state-in-effect rule is not about.
-  // Hydration persists any backfilled unlocks but stays silent (no toast burst).
+  // Push the current local copy to the server, adopting the server's copy on a
+  // stale-write conflict (409). Always sends the freshest ref, not a closure.
+  const doPush = useCallback(async () => {
+    const res = await pushProgress(progressRef.current);
+    if (res.kind === "ok") {
+      lastSyncedISORef.current = res.updatedISO;
+      setSyncState("synced");
+    } else if (res.kind === "conflict") {
+      lastSyncedISORef.current = res.updatedISO;
+      commit(res.progress, { announce: false, stamp: false });
+      setSyncState("synced");
+    } else if (res.kind === "needs-code") {
+      setSyncState("needs-code");
+    } else {
+      setSyncState("offline");
+    }
+  }, [commit]);
+
+  // Pull on connect and adopt whichever copy is newer; otherwise seed the
+  // server with our local copy.
+  const reconcile = useCallback(async () => {
+    const res = await pullProgress();
+    if (res.kind === "unconfigured") return setSyncState("local");
+    if (res.kind === "needs-code") return setSyncState("needs-code");
+    if (res.kind === "unavailable") return setSyncState("offline");
+
+    const local = progressRef.current;
+    const remote = res.progress;
+    if (remote && (!local.updatedISO || remote.updatedISO > local.updatedISO)) {
+      lastSyncedISORef.current = remote.updatedISO;
+      commit(remote, { announce: false, stamp: false });
+      return setSyncState("synced");
+    }
+    // Local is newer (or the server is empty) — seed/overwrite the server.
+    await doPush();
+  }, [commit, doPush]);
+
+  // One-time hydration from localStorage after mount, then kick off sync. The
+  // post-mount sync is the canonical way to dodge an SSR/CSR mismatch.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    commit(progressStore.load(), false);
+    commit(progressStore.load(), { announce: false, stamp: false });
     setReady(true);
-  }, [commit]);
+    void reconcile();
+  }, [commit, reconcile]);
+
+  // Debounced push whenever local state moves past what the server last saw.
+  useEffect(() => {
+    if (!ready) return;
+    if (syncState !== "synced" && syncState !== "offline") return;
+    if (progress.updatedISO === lastSyncedISORef.current) return;
+    const t = setTimeout(() => void doPush(), 1200);
+    return () => clearTimeout(t);
+  }, [progress.updatedISO, ready, syncState, doPush]);
+
+  const submitAccessCode = useCallback(
+    async (code: string): Promise<boolean> => {
+      const verdict = await verifyAccessCode(code);
+      if (verdict === "ok") {
+        setAccessCode(code);
+        setSyncState("connecting");
+        await reconcile();
+        return true;
+      }
+      if (verdict === "unconfigured") {
+        setSyncState("local");
+        return true;
+      }
+      return false; // bad code or transient failure — let the gate show an error
+    },
+    [reconcile],
+  );
+
+  const dismissSync = useCallback(() => setSyncState("local"), []);
+
+  const requestSync = useCallback(() => {
+    // If we already hold a code, re-pull; otherwise prompt for it.
+    setSyncState("connecting");
+    void reconcile();
+  }, [reconcile]);
 
   const clearPendingUnlocks = useCallback(() => setPendingUnlocks([]), []);
 
@@ -139,7 +254,7 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const importJSON = useCallback(
     (json: string) => {
       const next = progressStore.importJSON(json); // throws on bad input
-      commit(next, false); // re-derive statuses + backfill cosmetics, silently
+      commit(next, { announce: false }); // re-derive statuses + backfill cosmetics, silently
     },
     [commit],
   );
@@ -161,8 +276,12 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       exportJSON,
       importJSON,
       reset,
+      syncState,
+      submitAccessCode,
+      dismissSync,
+      requestSync,
     }),
-    [progress, ready, config, today, pendingUnlocks, clearPendingUnlocks, completeLesson, recordDrill, recordAttempt, reviewCard, update, exportJSON, importJSON, reset],
+    [progress, ready, config, today, pendingUnlocks, clearPendingUnlocks, completeLesson, recordDrill, recordAttempt, reviewCard, update, exportJSON, importJSON, reset, syncState, submitAccessCode, dismissSync, requestSync],
   );
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;

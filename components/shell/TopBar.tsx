@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SyncBadge } from "@/components/shell/SyncBadge";
 import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { levelProgress } from "@/lib/engine/xp";
@@ -46,6 +47,7 @@ export function TopBar() {
           <NavLink href="/parent" label="Parent" />
         </nav>
         <div className="ml-auto flex items-center gap-3">
+          <SyncBadge />
           <div className="hidden items-center gap-2 sm:flex" title={`${lp.intoLevel}/${lp.span} XP to next level`}>
             <span className="text-xs font-medium text-muted">Lv {lp.level}</span>
             <ProgressBar value={lp.pct} className="w-20" barClassName="bg-xp" />
