@@ -42,6 +42,7 @@ export function TopBar() {
         <nav className="ml-1 hidden gap-1 sm:flex">
           <NavLink href="/" label="Dungeon" />
           <NavLink href="/bounty" label="Bounty" />
+          <NavLink href="/loot" label="Loot" />
           <NavLink href="/parent" label="Parent" />
         </nav>
         <div className="ml-auto flex items-center gap-3">

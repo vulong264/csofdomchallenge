@@ -1,6 +1,7 @@
 "use client";
 
 import { DataControls } from "@/components/dashboard/DataControls";
+import { LootCard } from "@/components/dashboard/LootCard";
 import { NextActionCard } from "@/components/dashboard/NextActionCard";
 import { SectorMap } from "@/components/dashboard/SectorMap";
 import { VaultMeter } from "@/components/dashboard/VaultMeter";
@@ -59,6 +60,7 @@ export default function DashboardPage() {
         <div className="grid content-start gap-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-faint">Rewards</h2>
           <VaultMeter />
+          <LootCard />
         </div>
       </div>
 

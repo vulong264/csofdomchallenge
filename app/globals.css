@@ -32,6 +32,120 @@
   --streak: #ff8a3d; /* streak flame */
 }
 
+/*
+  Loot themes (spec §11.1). Each overrides the palette vars on [data-theme].
+  Keep these in sync with the `swatch` colours in lib/cosmetics/themes.ts.
+  "doom" is the :root default, so it needs no block.
+*/
+[data-theme="ember"] {
+  --bg: #140a08;
+  --surface: #1f0f0b;
+  --surface-2: #2a1410;
+  --surface-3: #3a1c16;
+  --border: #45221b;
+  --border-strong: #5e2e24;
+  --text: #fcebe4;
+  --muted: #c79a8b;
+  --faint: #8c6357;
+  --primary: #ff6a3d;
+  --primary-strong: #ff4f1f;
+  --primary-fg: #1a0703;
+  --accent: #ffb43d;
+  --accent-fg: #1f1300;
+  --xp: #ff9d5c;
+  --streak: #ff5a2d;
+}
+[data-theme="abyss"] {
+  --bg: #06101a;
+  --surface: #0a1b29;
+  --surface-2: #0f2233;
+  --surface-3: #173043;
+  --border: #1d3a4f;
+  --border-strong: #284d66;
+  --text: #e3f2fb;
+  --muted: #8fb3c7;
+  --faint: #5d7e92;
+  --primary: #2fa8ff;
+  --primary-strong: #0d8ff0;
+  --primary-fg: #03121d;
+  --accent: #36e0c8;
+  --accent-fg: #03150f;
+  --xp: #5cc8ff;
+  --streak: #ffae57;
+}
+[data-theme="gold"] {
+  --bg: #15110a;
+  --surface: #201a0e;
+  --surface-2: #2a2212;
+  --surface-3: #3a2f19;
+  --border: #463a1f;
+  --border-strong: #5e4d28;
+  --text: #f8f0dc;
+  --muted: #c9b489;
+  --faint: #8d7c55;
+  --primary: #f2c14e;
+  --primary-strong: #e3ac2b;
+  --primary-fg: #1c1503;
+  --accent: #ffe08a;
+  --accent-fg: #1c1503;
+  --xp: #ffd66b;
+  --streak: #ff9f43;
+}
+[data-theme="frost"] {
+  --bg: #080f14;
+  --surface: #0d1b22;
+  --surface-2: #13222b;
+  --surface-3: #1c3039;
+  --border: #243c47;
+  --border-strong: #32525f;
+  --text: #e6f7fd;
+  --muted: #9bc0cd;
+  --faint: #648391;
+  --primary: #56c6e6;
+  --primary-strong: #2fb0d6;
+  --primary-fg: #02141a;
+  --accent: #aef0ff;
+  --accent-fg: #03171d;
+  --xp: #7fd9f2;
+  --streak: #ffb86b;
+}
+[data-theme="toxic"] {
+  --bg: #0a1208;
+  --surface: #101d0b;
+  --surface-2: #15240f;
+  --surface-3: #1f3416;
+  --border: #294320;
+  --border-strong: #38592c;
+  --text: #ecfbe2;
+  --muted: #a7c895;
+  --faint: #6f8c5f;
+  --primary: #7ee03a;
+  --primary-strong: #62c421;
+  --primary-fg: #0a1703;
+  --accent: #c8ff4d;
+  --accent-fg: #131f02;
+  --xp: #9bef5c;
+  --streak: #ffd23d;
+}
+[data-theme="void"] {
+  --bg: #05040a;
+  --surface: #100d20;
+  --surface-2: #16122a;
+  --surface-3: #211b3c;
+  --border: #2c2550;
+  --border-strong: #3d3470;
+  --text: #efeafb;
+  --muted: #a99fce;
+  --faint: #6f6699;
+  --primary: #b08cff;
+  --primary-strong: #9a6dff;
+  --primary-fg: #0c0718;
+  --accent: #ff7ad9;
+  --accent-fg: #1a0514;
+  --xp: #8fb4ff;
+  --streak: #ff8ad0;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
@@ -67,6 +181,8 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* Smooth fade when a loot theme is equipped (skipped under reduced motion). */
+    transition: background-color 0.4s ease, color 0.4s ease;
   }
   /* Default border color (Tailwind v4 resets it to currentColor) + thin scrollbars. */
   * {
@@ -83,4 +199,42 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
+}
+
+/*
+  Reduced motion. Honoured two ways: the OS preference, and the in-app toggle
+  (parent view) which sets `data-reduced-motion="true"` on <html>. Framer Motion
+  is told separately via <MotionConfig reducedMotion> so its animations also stop.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@keyframes ccd-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.ccd-rise {
+  animation: ccd-rise 0.4s ease both;
 }

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppProviders } from "./providers";
+import { MobileNav } from "@/components/shell/MobileNav";
 import { TopBar } from "@/components/shell/TopBar";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AppProviders>
           <TopBar />
           <main className="mx-auto w-full max-w-5xl px-4 pb-24 pt-6">{children}</main>
+          <MobileNav />
         </AppProviders>
       </body>
     </html>

@@ -40,4 +40,15 @@ export function rewardUnitIds(): string[] {
   return rewardUnits().map((u) => u.id);
 }
 
+/** Map each syllabus topic code to a human label (the first lesson that owns it). */
+export function topicLabels(): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const u of UNITS) {
+    for (const l of u.lessons) {
+      if (!map[l.topicCode]) map[l.topicCode] = l.title;
+    }
+  }
+  return map;
+}
+
 export type { Unit, Lesson } from "./types";
