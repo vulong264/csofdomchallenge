@@ -44,7 +44,8 @@ export async function POST(request: Request): Promise<Response> {
       studentAnswer: body.studentAnswer.slice(0, 6000),
     });
     return Response.json(grade, { headers: { "Cache-Control": "no-store" } });
-  } catch {
+  } catch (e) {
+    console.error("[grade] upstream error:", e);
     return err("upstream", 502, "Grading is unavailable right now.");
   }
 }

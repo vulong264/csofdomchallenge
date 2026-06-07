@@ -53,7 +53,7 @@ export async function POST(request: Request): Promise<Response> {
   if (blocked) return blocked;
 
   try {
-    const stream = streamTutorReply(
+    const stream = await streamTutorReply(
       {
         title: unit.title,
         syllabusRef: unit.syllabusRef,
@@ -68,7 +68,10 @@ export async function POST(request: Request): Promise<Response> {
         "Cache-Control": "no-store",
       },
     });
-  } catch {
+  } catch (e) {
+    // Surface the real cause in logs (e.g. "credit balance is too low"); the
+    // client gets a clean 502 it can render instead of a silent dead bubble.
+    console.error("[tutor] upstream error:", e);
     return err("upstream", 502, "The tutor is unavailable right now.");
   }
 }

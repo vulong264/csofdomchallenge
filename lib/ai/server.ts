@@ -31,8 +31,16 @@ function client(): Anthropic {
  * Stream the tutor's reply as plain UTF-8 text chunks. Latency-sensitive chat,
  * so thinking is off and effort is low — the system prompt does the heavy
  * lifting. Caller is responsible for the `aiAvailable()` pre-check.
+ *
+ * Resolves only once the FIRST chunk is in hand: an upstream failure (bad key,
+ * no credits, rate limit) rejects this promise so the route can return a real
+ * error status, instead of handing back an empty 200 stream that the client
+ * renders as a silent dead bubble.
  */
-export function streamTutorReply(scope: TutorScope, messages: TutorMessage[]): ReadableStream<Uint8Array> {
+export async function streamTutorReply(
+  scope: TutorScope,
+  messages: TutorMessage[],
+): Promise<ReadableStream<Uint8Array>> {
   const encoder = new TextEncoder();
   const sdkStream = client().messages.stream({
     model: TUTOR_MODEL,
@@ -43,18 +51,29 @@ export function streamTutorReply(scope: TutorScope, messages: TutorMessage[]): R
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
   });
 
+  async function* deltas(): AsyncGenerator<string> {
+    for await (const event of sdkStream) {
+      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        yield event.delta.text;
+      }
+    }
+  }
+  const iter = deltas();
+  // Surface a pre-stream failure as a thrown error (caught by the route → 502).
+  const first = await iter.next();
+
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const event of sdkStream) {
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            controller.enqueue(encoder.encode(event.delta.text));
-          }
+        if (!first.done) controller.enqueue(encoder.encode(first.value));
+        for await (const text of iter) {
+          controller.enqueue(encoder.encode(text));
         }
         controller.close();
-      } catch {
-        // Mid-stream failure (rate limit, network): close cleanly so the client
-        // keeps whatever text arrived and shows a non-fatal hiccup notice.
+      } catch (err) {
+        // Mid-stream failure (rate limit, network) after some text already sent:
+        // log for observability, then close so the client keeps what arrived.
+        console.error("[tutor] stream error mid-response:", err);
         controller.close();
       }
     },

@@ -43,8 +43,15 @@ export function TutorChat({ unit, available }: { unit: Unit; available: boolean 
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const dropEmptyPlaceholder = () =>
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === "assistant" && last.content === "") return prev.slice(0, -1);
+        return prev;
+      });
+
     try {
-      await streamTutor(
+      const full = await streamTutor(
         { unitId: unit.id, messages: history },
         (chunk) => {
           setMessages((prev) => {
@@ -56,18 +63,21 @@ export function TutorChat({ unit, available }: { unit: Unit; available: boolean 
         },
         controller.signal,
       );
+      // Defensive: a 200 with no text (shouldn't happen now the server surfaces
+      // upstream errors, but guard so the bubble is never silently empty).
+      if (!full.trim()) {
+        setError("The tutor didn't respond — try again in a moment.");
+        dropEmptyPlaceholder();
+      }
     } catch (e) {
       const msg =
         e instanceof AiError && e.reason === "unavailable"
           ? "The tutor isn't configured right now."
-          : "The tutor hit a snag — try again.";
+          : e instanceof AiError && e.reason === "rate_limited"
+            ? e.message
+            : "The tutor is unavailable right now — try again in a moment.";
       setError(msg);
-      // Drop the empty assistant placeholder if nothing streamed.
-      setMessages((prev) => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "assistant" && last.content === "") return prev.slice(0, -1);
-        return prev;
-      });
+      dropEmptyPlaceholder();
     } finally {
       setStreaming(false);
       abortRef.current = null;
